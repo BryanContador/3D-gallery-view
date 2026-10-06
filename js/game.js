@@ -1,7 +1,7 @@
 // Main setup: renderer (PS1 look), scene, fog, loop.
 import * as THREE from 'three';
 import { Player } from './player.js';
-import { buildWorld, updateZones } from './world-builder.js';
+import { buildWorld, updateZones, updateChurches } from './world-builder.js';
 import { initHUD, setStartStatus, hideStartScreen } from './ui.js';
 
 // --- PS1 rendering settings ---
@@ -51,7 +51,7 @@ if (typeof galleryData === 'undefined') {
 } else {
     world = buildWorld(scene, galleryData);
     player.setWorld(world);
-    world.islands.forEach(i => console.log(`Island "${i.name}": ${i.images.length} images`));
+    world.islands.forEach(i => console.log(`Island "${i.name}": ${i.images.length} images (church holds ${i.capacity})`));
     setStartStatus(`Data loaded: ${world.islands.length} galleries ready.`, true);
 }
 
@@ -61,7 +61,7 @@ function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     player.update(dt);
-    if (world) updateZones(world, player);
+    if (world) { updateZones(world, player); updateChurches(world, player); }
     renderer.render(scene, camera);
 }
 animate();
