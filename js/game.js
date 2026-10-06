@@ -6,7 +6,7 @@ import { initHUD, setStartStatus, hideStartScreen } from './ui.js';
 
 // --- PS1 rendering settings ---
 const DOWNSCALE = 0.35;
-const FOG_COLOR = 0x726B7A; // dark gray-purple
+const FOG_COLOR = 0x6C6774; // dark gray-purple
 const FOG_DENSITY = 0.035;
 
 const canvas = document.getElementById('game-canvas');
