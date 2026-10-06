@@ -1,0 +1,323 @@
+// World generation + collision data.
+//
+// Phase 3: central hub, six floating islands on a grid, bridges with parkour gaps.
+// Everything is created through addSurface()/addBox()/addRamp() so it is collidable.
+// Church interiors (Phase 4) will replace the placeholder "church site" blocks.
+import * as THREE from 'three';
+
+// ---------------------------------------------------------------- layout config
+const GRID = 240;          // distance between hub/island centres (metres)
+const HUB_HALF = 20;       // hub is 40 x 40
+const ISLAND_HALF = 55;    // islands are 110 x 110
+const BRIDGE_W = 6;
+const REST = 10;           // mid-bridge rest platform (also a respawn checkpoint)
+const SITE_W = 30;         // church footprint: width ...
+const SITE_L = 56;         // ... and length (along its facing direction)
+const SITE_H = 14;
+
+// Grid position (gx, gz), and which way the church entrance faces ([x, z] unit vector).
+// Entrances face the bridge the player normally arrives from.
+const LAYOUT = [
+    { id: 'sunshine',   gx:  0, gz: -1, facing: [ 0,  1] },
+    { id: 'jamol',      gx:  1, gz:  0, facing: [-1,  0] },
+    { id: 'berkut',     gx:  0, gz:  1, facing: [ 0, -1] },
+    { id: 'persona',    gx: -1, gz:  0, facing: [ 1,  0] },
+    { id: 'demon_girl', gx:  1, gz: -1, facing: [ 0,  1] },
+    { id: 'misc',       gx: -1, gz:  1, facing: [ 0, -1] },
+];
+// Bridge network: the hub reaches the four inner islands, and the two corner
+// islands are reached through their neighbours.
+const LINKS = [
+    ['hub', 'sunshine'], ['hub', 'jamol'], ['hub', 'berkut'], ['hub', 'persona'],
+    ['sunshine', 'demon_girl'], ['jamol', 'demon_girl'],
+    ['persona', 'misc'], ['berkut', 'misc'],
+];
+
+// ---------------------------------------------------------------- textures
+function mulberry32(seed) {
+    return function () {
+        seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function makeTexture(size, paint) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    paint(c.getContext('2d'), size);
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+}
+
+const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
+
+function noiseTexture(base, vary, seed) {
+    const rnd = mulberry32(seed);
+    return makeTexture(8, (ctx, s) => {
+        for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) {
+            const k = (rnd() - 0.5) * 2 * vary;
+            ctx.fillStyle = `rgb(${clamp255(base[0] + k)},${clamp255(base[1] + k)},${clamp255(base[2] + k)})`;
+            ctx.fillRect(x, y, 1, 1);
+        }
+    });
+}
+
+function plankTexture(base, seed) {
+    const rnd = mulberry32(seed);
+    return makeTexture(8, (ctx, s) => {
+        for (let y = 0; y < s; y++) {
+            const dark = y % 4 === 0 ? -18 : 0;
+            for (let x = 0; x < s; x++) {
+                const k = dark + (rnd() - 0.5) * 12;
+                ctx.fillStyle = `rgb(${clamp255(base[0] + k)},${clamp255(base[1] + k)},${clamp255(base[2] + k)})`;
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+    });
+}
+
+function signTexture(text) {
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 32;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#16120d'; ctx.fillRect(0, 0, 128, 32);
+    ctx.strokeStyle = '#8a8270'; ctx.lineWidth = 2; ctx.strokeRect(1, 1, 126, 30);
+    ctx.fillStyle = '#d8d2c0';
+    ctx.font = 'bold 15px "Courier New", Courier, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, 64, 17);
+    const t = new THREE.CanvasTexture(c);
+    t.magFilter = THREE.NearestFilter;
+    t.minFilter = THREE.NearestFilter;
+    t.generateMipmaps = false;
+    return t;
+}
+
+// ---------------------------------------------------------------- primitives
+const TILE = 4; // one 8x8 texture covers 4 m, i.e. 0.5 m per texel
+
+// Single flat plane whose UVs are scaled so texels stay the same size at any dimension.
+function floorPlane(w, d, material) {
+    const g = new THREE.PlaneGeometry(w, d);
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / TILE, uv.getY(i) * d / TILE);
+    const m = new THREE.Mesh(g, material);
+    m.rotation.x = -Math.PI / 2;
+    return m;
+}
+
+// Walkable surface: one plane for drawing + a thick collider underneath (no tunnelling).
+function addSurface(scene, world, cx, cz, w, d, topY, material) {
+    const m = floorPlane(w, d, material);
+    m.position.set(cx, topY, cz);
+    scene.add(m);
+    world.boxes.push({
+        minX: cx - w / 2, maxX: cx + w / 2, minY: topY - 1, maxY: topY,
+        minZ: cz - d / 2, maxZ: cz + d / 2,
+    });
+    return m;
+}
+
+// Solid visible box + collider. (cx,cy,cz) = centre.
+export function addBox(scene, world, cx, cy, cz, w, h, d, material) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set(cx, cy, cz);
+    scene.add(mesh);
+    world.boxes.push({
+        minX: cx - w / 2, maxX: cx + w / 2, minY: cy - h / 2, maxY: cy + h / 2,
+        minZ: cz - d / 2, maxZ: cz + d / 2,
+    });
+    return mesh;
+}
+
+// Walkable slope; y0 at the min end of `axis`, y1 at the max end. Omit `material` for an
+// invisible ramp (church stairs, Phase 4).
+export function addRamp(scene, world, minX, maxX, minZ, maxZ, axis, y0, y1, material) {
+    world.ramps.push({ minX, maxX, minZ, maxZ, axis, y0, y1 });
+    if (!material) return null;
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2, cy = (y0 + y1) / 2;
+    let mesh;
+    if (axis === 'x') {
+        const dx = maxX - minX, dy = y1 - y0;
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(Math.hypot(dx, dy), 0.1, maxZ - minZ), material);
+        mesh.rotation.z = Math.atan2(dy, dx);
+    } else {
+        const dz = maxZ - minZ, dy = y1 - y0;
+        mesh = new THREE.Mesh(new THREE.BoxGeometry(maxX - minX, 0.1, Math.hypot(dz, dy)), material);
+        mesh.rotation.x = -Math.atan2(dy, dz);
+    }
+    mesh.position.set(cx, cy - 0.05, cz);
+    scene.add(mesh);
+    return mesh;
+}
+
+// Signpost: post + one textured plane facing (nx, nz).
+function addSign(scene, x, z, nx, nz, text, mats, width = 4, height = 1, y = 2.6, withPost = true) {
+    if (withPost) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, y + 0.5, 0.25), mats.post);
+        post.position.set(x, (y + 0.5) / 2, z);
+        scene.add(post);
+    }
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, height),
+        new THREE.MeshBasicMaterial({ map: signTexture(text) }));
+    plane.position.set(x + nx * 0.16, y, z + nz * 0.16);
+    plane.rotation.y = Math.atan2(nx, nz);
+    scene.add(plane);
+}
+
+// Floating-rock underside (visual only).
+function addUnderside(scene, cx, cz, half, depth, material) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(half * Math.SQRT2, depth, 4), material);
+    cone.rotation.set(Math.PI, Math.PI / 4, 0);
+    cone.position.set(cx, -1 - depth / 2, cz);
+    scene.add(cone);
+}
+
+// ---------------------------------------------------------------- parkour generation
+// One half of a bridge, as segments separated by gaps. Heights stay within 0..1.6 m,
+// rises only happen over gaps <= 4.5 m, and the last segment is level with the rest
+// platform / island, so every gap can be cleared with a sprint jump (walk jump ~4 m).
+function generateHalf(length, rnd) {
+    const n = Math.max(1, Math.floor(length / 24));
+    const gaps = [], heights = [0];
+    for (let i = 0; i < n; i++) gaps.push([3, 4.5, 4.5, 6][Math.floor(rnd() * 4)]);
+    const segTotal = length - gaps.reduce((a, b) => a + b, 0);
+    let weights = Array.from({ length: n + 1 }, () => 0.6 + rnd() * 0.8);
+    const wSum = weights.reduce((a, b) => a + b, 0);
+    let lens = weights.map(w => segTotal * w / wSum);
+    if (lens.some(l => l < 6)) lens = lens.map(() => segTotal / (n + 1));
+    for (let i = 1; i <= n; i++) {
+        const steps = gaps[i - 1] <= 4.5 ? [-1.5, -0.8, 0, 0, 0.8] : [-1.5, -0.8, 0, 0];
+        const h = heights[i - 1] + steps[Math.floor(rnd() * steps.length)];
+        heights.push(i === n ? 0 : Math.max(0, Math.min(1.6, h)));
+    }
+    const segs = [];
+    let t = 0;
+    for (let i = 0; i <= n; i++) {
+        segs.push({ t0: t, t1: t + lens[i], y: heights[i] });
+        t += lens[i] + (gaps[i] || 0);
+    }
+    return segs;
+}
+
+// ---------------------------------------------------------------- world
+export function buildWorld(scene, data) {
+    const world = {
+        boxes: [], ramps: [], zones: [], kiosks: [], islands: [], bridges: [],
+        spawn: { x: 0, y: 0, z: 6, yaw: 0 }, currentZone: null,
+    };
+
+    const mats = {
+        hub:    new THREE.MeshLambertMaterial({ map: noiseTexture([78, 76, 70], 14, 11) }),
+        island: new THREE.MeshLambertMaterial({ map: noiseTexture([46, 56, 42], 12, 22) }),
+        bridge: new THREE.MeshLambertMaterial({ map: plankTexture([88, 70, 50], 33) }),
+        rest:   new THREE.MeshLambertMaterial({ map: noiseTexture([70, 66, 60], 10, 44) }),
+        rock:   new THREE.MeshLambertMaterial({ color: 0x1b1713, flatShading: true }),
+        site:   new THREE.MeshLambertMaterial({ map: noiseTexture([58, 54, 60], 10, 55) }),
+        post:   new THREE.MeshLambertMaterial({ color: 0x3a2d22 }),
+        kiosk:  new THREE.MeshLambertMaterial({ color: 0xaa1f1f }),
+    };
+
+    const addKiosk = (id, x, z) => {
+        addBox(scene, world, x, 0.5, z, 1, 1, 1, mats.kiosk);
+        world.kiosks.push({ id, x, y: 0.5, z });
+    };
+
+    // --- nodes: hub + islands ---
+    const nodes = {};
+    const hub = { id: 'hub', name: 'HUB', cx: 0, cz: 0, half: HUB_HALF };
+    nodes.hub = hub;
+    addSurface(scene, world, 0, 0, HUB_HALF * 2, HUB_HALF * 2, 0, mats.hub);
+    addUnderside(scene, 0, 0, HUB_HALF, 22, mats.rock);
+    addKiosk('hub', 0, -4);
+    world.zones.push({ id: 'hub', minX: -HUB_HALF, maxX: HUB_HALF, minZ: -HUB_HALF, maxZ: HUB_HALF,
+        spawn: { x: 0, y: 0, z: 6 } });
+
+    for (const def of LAYOUT) {
+        const cat = data.categories.find(c => c.id === def.id);
+        if (!cat) { console.warn(`Category "${def.id}" not found in galleryData.categories; island skipped.`); continue; }
+        const [fx, fz] = def.facing;
+        const cx = def.gx * GRID, cz = def.gz * GRID;
+        const name = (cat.name || def.id).trim().toUpperCase();
+        const images = (data[cat.galleryKey] || []).filter(i => i.type === 'image');
+
+        addSurface(scene, world, cx, cz, ISLAND_HALF * 2, ISLAND_HALF * 2, 0, mats.island);
+        addUnderside(scene, cx, cz, ISLAND_HALF, 45, mats.rock);
+
+        // Church site (placeholder block until Phase 4). Entrance wall is 33 m from the centre.
+        const siteCx = cx + fx * 5, siteCz = cz + fz * 5;
+        const sx = fx !== 0 ? SITE_L : SITE_W, sz = fz !== 0 ? SITE_L : SITE_W;
+        addBox(scene, world, siteCx, SITE_H / 2, siteCz, sx, SITE_H, sz, mats.site);
+        // Name plate on the entrance wall (Phase 4 replaces this block with a real doorway).
+        addSign(scene, cx + fx * 33.1, cz + fz * 33.1, fx, fz, name, mats, 14, 3.5, 8, false);
+
+        // Audio kiosk just outside the entrance (Phase 6 makes it interactive).
+        const kx = cx + fx * 41 + (-fz) * 6, kz = cz + fz * 41 + fx * 6;
+        addKiosk(def.id, kx, kz);
+
+        const island = { id: def.id, name, galleryKey: cat.galleryKey, images, cx, cz, half: ISLAND_HALF,
+            facing: def.facing, site: { cx: siteCx, cz: siteCz, w: SITE_W, l: SITE_L, h: SITE_H } };
+        world.islands.push(island);
+        nodes[def.id] = { id: def.id, name, cx, cz, half: ISLAND_HALF };
+        world.zones.push({ id: def.id, minX: cx - ISLAND_HALF, maxX: cx + ISLAND_HALF,
+            minZ: cz - ISLAND_HALF, maxZ: cz + ISLAND_HALF,
+            spawn: { x: cx + fx * 45, y: 0, z: cz + fz * 45 } });
+    }
+
+    // --- bridges ---
+    const rnd = mulberry32(2024);
+    for (const [aId, bId] of LINKS) {
+        const a = nodes[aId], b = nodes[bId];
+        if (!a || !b) continue;
+        const dx = Math.sign(b.cx - a.cx), dz = Math.sign(b.cz - a.cz);   // one of them is 0
+        const sx = a.cx + dx * a.half, sz = a.cz + dz * a.half;            // bridge start
+        const ex = b.cx - dx * b.half, ez = b.cz - dz * b.half;            // bridge end
+        const L = Math.abs(ex - sx) + Math.abs(ez - sz);
+        const at = (t) => ({ x: sx + dx * t, z: sz + dz * t });
+        const place = (t0, t1, y, mat) => {
+            const len = t1 - t0, mid = at((t0 + t1) / 2);
+            const w = dx !== 0 ? len : BRIDGE_W, d = dx !== 0 ? BRIDGE_W : len;
+            addSurface(scene, world, mid.x, mid.z, w, d, y, mat);
+        };
+
+        const half = (L - REST) / 2;
+        for (const seg of generateHalf(half, rnd)) place(seg.t0, seg.t1, seg.y, mats.bridge);
+        const rest = at(L / 2);
+        addSurface(scene, world, rest.x, rest.z, REST, REST, 0, mats.rest);
+        world.zones.push({ id: `rest_${aId}_${bId}`, minX: rest.x - REST / 2, maxX: rest.x + REST / 2,
+            minZ: rest.z - REST / 2, maxZ: rest.z + REST / 2, spawn: { x: rest.x, y: 0, z: rest.z } });
+        for (const seg of generateHalf(half, rnd))
+            place(L - seg.t1, L - seg.t0, seg.y, mats.bridge);   // mirrored so it ends flush at the far island
+
+        // Signposts at each mouth, naming where the bridge leads.
+        const sideX = dz !== 0 ? 5 : 0, sideZ = dx !== 0 ? 5 : 0;
+        addSign(scene, sx - dx * 3 + sideX, sz - dz * 3 + sideZ, -dx, -dz, `TO ${b.name}`, mats);
+        addSign(scene, ex + dx * 3 - sideX, ez + dz * 3 - sideZ, dx, dz, `TO ${a.name}`, mats);
+
+        world.bridges.push({ from: aId, to: bId, start: { x: sx, z: sz }, end: { x: ex, z: ez }, length: L });
+    }
+
+    world.currentZone = world.zones[0];
+    return world;
+}
+
+// Checkpoints: standing on the hub, an island or a rest platform makes it the respawn point.
+export function updateZones(world, player) {
+    if (!player.grounded) return;
+    const { x, y, z } = player.pos;
+    if (y < -0.2 || y > 0.5) return;
+    for (const zone of world.zones) {
+        if (x < zone.minX || x > zone.maxX || z < zone.minZ || z > zone.maxZ) continue;
+        if (world.currentZone !== zone) {
+            world.currentZone = zone;
+            player.spawn = { ...zone.spawn, yaw: player.yaw };
+        }
+        return;
+    }
+}

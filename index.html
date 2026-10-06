@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Benjamin Counter (3D)</title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Three.js via import map (no build step) -->
+    <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <!-- Portfolio data CDN. Must load BEFORE the game modules. -->
+    <script src="https://bryancontador.github.io/data.js"></script>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Crosshair -->
+    <div id="crosshair"></div>
+
+    <!-- HUD Overlay -->
+    <div id="hud">
+        <div id="hud-title">BENJAMIN COUNTER (3D)</div>
+        <div class="status-widget">
+            <div class="status-item">
+                <svg class="status-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span id="local-time">--:--</span>
+            </div>
+            <div class="status-divider"></div>
+            <div class="status-item">
+                <svg class="status-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="M20 12h2"></path><path d="m19.07 4.93-1.41 1.41"></path>
+                    <path d="M15.94 13A5.96 5.96 0 0 0 12 8c-2.43 0-4.52 1.45-5.46 3.54A4 4 0 0 0 7 19h11a3 3 0 0 0 0-6h-2.06z"></path>
+                </svg>
+                <span id="local-weather">--°C</span>
+            </div>
+        </div>
+        <div id="controls-hint">WASD to Move | SHIFT to Sprint | SPACE to Jump | CLICK to Interact | ESC to unlock mouse</div>
+    </div>
+
+    <!-- Start screen (Pointer Lock needs a user gesture) -->
+    <div id="start-screen">
+        <h1>BENJAMIN COUNTER (3D)</h1>
+        <p id="start-status">Loading data...</p>
+        <button id="start-button" disabled>CLICK TO ENTER</button>
+    </div>
+
+    <script type="module" src="js/game.js"></script>
+</body>
+</html>
