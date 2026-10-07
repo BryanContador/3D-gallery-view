@@ -130,6 +130,10 @@ export class Player {
         p[axis] += d;
         for (const c of this.boxes) {
             if (!this._overlaps(c)) continue;
+            // Already inside this box before the move (e.g. a stair ramp lifted us into a balcony
+            // floor)? Don't trap the player: let them walk out.
+            p[axis] -= d; const wasInside = this._overlaps(c); p[axis] += d;
+            if (wasInside) continue;
             if (c.maxY - p.y <= STEP) { p.y = c.maxY; continue; }   // small ledge: step up
             p[axis] -= d;                                           // wall: stop
             this.vel[axis] = 0;

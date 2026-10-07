@@ -24,7 +24,9 @@ const WALL_H = LEVEL_H * (LEVELS - 1) + 8;       // 20
 const WALL_TOP = WALL_H + 0.3;
 const RIDGE = 5;
 const DOOR_W = 6, DOOR_H = 6.5;
-const STRIP = 5, SLAB_T = 0.6;                   // balcony width / thickness
+const DOOR_TRIM_PROUD = 0.1;
+const DOOR_TRIM_INSET = 0.2;
+const STRIP = 5, SLAB_T = 0.4;                   // balcony width / thickness
 const BACK_V = -IL + STRIP;                      // inner edge of the back balcony
 const LANE_A = [23.6, IL], LANE_B = [20, 23.6];  // stair lanes along the entrance wall (v ranges)
 const U_BASE = -2.4, U_TOP = -12;                // stair flights run between these u values
@@ -278,12 +280,17 @@ export function buildChurch(scene, world, island, A) {
         const us = [u0, u1, a[0], b[0]], vs = [v0, v1, a[2], b[2]];
         collider(Math.min(...us), Math.max(...us), y0, y1, Math.min(...vs), Math.max(...vs));
     };
-    wallPanel(-IW, -IL, -IW, IL, 0, WALL_TOP, -1, 0);                       // left
-    wallPanel(IW, -IL, IW, IL, 0, WALL_TOP, 1, 0);                          // right
+    wallPanel(-IW, -IL, -IW, IL, 0, WALL_TOP, -1, 0, T, T);                 // left
+    wallPanel(IW, -IL, IW, IL, 0, WALL_TOP, 1, 0, T, T);                    // right
     wallPanel(-IW, -IL, IW, -IL, 0, WALL_TOP, 0, -1, T, T);                 // back
     wallPanel(-IW, IL, -DOOR_W / 2, IL, 0, WALL_TOP, 0, 1, T, 0);           // entrance, left of door
     wallPanel(DOOR_W / 2, IL, IW, IL, 0, WALL_TOP, 0, 1, 0, T);             // entrance, right of door
     wallPanel(-DOOR_W / 2, IL, DOOR_W / 2, IL, DOOR_H, WALL_TOP, 0, 1);     // lintel above the door
+
+    // Doorway reveals: the wall's thickness around the opening, so you can't see into the wall.
+    for (const s of [-1, 1])
+        add(quadGeo([s * DOOR_W / 1, 0, IL], [0, 0, T], [0, DOOR_H, 0], [0, 3, IL + T / 2], 1, 4, 2, wallShade), M.inStone);
+    add(quadGeo([-DOOR_W / 2, DOOR_H + 1, IL], [DOOR_W, 0, 0], [0, 0, T], [0, 0, IL + T / 2], 4, 1, 1, wallShade), M.inStone);
 
     // ---- gables and roof ----
     const apex = WALL_H + RIDGE;
@@ -315,11 +322,12 @@ export function buildChurch(scene, world, island, A) {
         box(s * 5.65, 0.4, -13 + i * 3.2, 5.7, 0.8, 0.9, M.inWood);
 
     // ---- doorway frame + name sign ----
-    for (const s of [-1, 1]) box(s * (DOOR_W / 2 + 0.25), DOOR_H / 2, IL + T / 2, 0.5, DOOR_H, T + 0.3, M.inWood, false);
-    box(0, DOOR_H + 0.25, IL + T / 2, DOOR_W + 1, 0.5, T + 0.3, M.inWood, false);
+    const doorTrimDepth = T + 2 * DOOR_TRIM_PROUD + DOOR_TRIM_INSET;
+    const doorTrimV = IL + T / 2 - DOOR_TRIM_INSET / 2;
+    for (const s of [-1, 1]) box(s * (DOOR_W / 2 + 0.25), DOOR_H / 2, doorTrimV, 0.5, DOOR_H, doorTrimDepth, M.inWood, false);
+    box(0, DOOR_H + 0.25, doorTrimV, DOOR_W + 1, 0.5, doorTrimDepth, M.inWood, false);
     const nameMat = new THREE.MeshBasicMaterial({ map: labelTexture(256, 48, island.name, 'bold 24px "Courier New", Courier, monospace', '#e0d6b8', '#17120d', '#8a7a58') });
-    add(quadGeo([-3.5, 7.1, OL + 0.05], [7, 0, 0], [0, 1.3, 0], [0, 8, 100]), nameMat);
-
+    add(quadGeo([-3.5, 7.1, OL + 0.05], [7, 0, 0], [0, 1.3, 0], [0, 8, 100], 7, 1.3), nameMat);
     // ---- buttresses (silhouette) ----
     for (const s of [-1, 1]) for (const v of [-20, -8, 4, 16])
         box(s * (OW + 0.6), (WALL_H - 3) / 2, v, 1.2, WALL_H - 3, 1.6, M.exStone);
