@@ -1,13 +1,14 @@
 // Main setup: renderer (PS1 look), scene, fog, loop.
 import * as THREE from 'three';
 import { Player } from './player.js';
-import { buildWorld, updateZones, updateChurches } from './world-builder.js';
-import { initHUD, setStartStatus, hideStartScreen } from './ui.js';
+import { buildWorld, updateZones } from './world-builder.js';
+import { FOG, stats, updateFog, updateCulling } from './atmosphere.js';
+import { initHUD, initDebug, setStartStatus, hideStartScreen } from './ui.js';
 
 // --- PS1 rendering settings ---
 const DOWNSCALE = 0.35;
 const FOG_COLOR = 0x6C6774; // dark gray-purple
-const FOG_DENSITY = 0.035;
+// Fog density now lives in atmosphere.js (FOG), because it changes per zone.
 
 const canvas = document.getElementById('game-canvas');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -15,7 +16,7 @@ renderer.setPixelRatio(1);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG_COLOR);
-scene.fog = new THREE.FogExp2(FOG_COLOR, FOG_DENSITY);
+scene.fog = new THREE.FogExp2(FOG_COLOR, FOG.default);
 
 const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 600);
 
@@ -55,13 +56,24 @@ if (typeof galleryData === 'undefined') {
     setStartStatus(`Data loaded: ${world.islands.length} galleries ready.`, true);
 }
 
+// --- Debug readout (press F3) and live fog tweaking from the console (FOG) ---
+window.FOG = FOG;
+const tickDebug = initDebug((fps) =>
+    `FPS ${fps.toFixed(0)}   draw calls ${renderer.info.render.calls}   triangles ${renderer.info.render.triangles}\n` +
+    `fog ${scene.fog.density.toFixed(3)} (${stats.zone})   chunks drawn ${stats.visible}/${stats.total}   cull ${stats.cull.toFixed(0)} m`);
+
 // --- Loop ---
 const clock = new THREE.Clock();
 function animate() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
     player.update(dt);
-    if (world) { updateZones(world, player); updateChurches(world, player); }
+    if (world) {
+        updateZones(world, player);
+        updateFog(world, scene, player, dt);
+        updateCulling(world, player, scene.fog.density);
+    }
     renderer.render(scene, camera);
+    tickDebug();
 }
 animate();

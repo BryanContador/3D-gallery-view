@@ -231,6 +231,9 @@ export function makeChurchAssets() {
         glassIn:  GLASS_PALS.map((p, i) => B({ map: glassTexture(40 + i, p) })),
         glassOut: GLASS_PALS.map((p, i) => new THREE.MeshBasicMaterial({ map: glassTexture(40 + i, p) })),
     };
+    // Interior materials: they ignore fog by default (clear, warm interior). setInteriorFog() flips them.
+    const mats = A.m;
+    A.interior = [mats.inStone, mats.inFloor, mats.inWood, mats.inWoodDS, mats.inRoof, mats.dark, mats.carpet, mats.frame, mats.flame, ...mats.glassIn];
     const cache = {};
     A.glow = (hex, op) => cache['g' + hex + op] ||
         (cache['g' + hex + op] = B({ map: A.glowTex, color: hex, transparent: true, opacity: op,
@@ -328,6 +331,7 @@ export function buildChurch(scene, world, island, A) {
     box(0, DOOR_H + 0.25, doorTrimV, DOOR_W + 1, 0.5, doorTrimDepth, M.inWood, false);
     const nameMat = new THREE.MeshBasicMaterial({ map: labelTexture(256, 48, island.name, 'bold 24px "Courier New", Courier, monospace', '#e0d6b8', '#17120d', '#8a7a58') });
     add(quadGeo([-3.5, 7.1, OL + 0.05], [7, 0, 0], [0, 1.3, 0], [0, 8, 100], 7, 1.3), nameMat);
+
     // ---- buttresses (silhouette) ----
     for (const s of [-1, 1]) for (const v of [-20, -8, 4, 16])
         box(s * (OW + 0.6), (WALL_H - 3) / 2, v, 1.2, WALL_H - 3, 1.6, M.exStone);
@@ -435,7 +439,9 @@ export function buildChurch(scene, world, island, A) {
         const slot = slots[k];
         const cy = slot.y + ART_CY;
         const frame = place(add(A.unitPlane, M.frame), slot, cy, 0.04);
-        const art = place(add(A.unitPlane, new THREE.MeshBasicMaterial({ color: 0x1a1612, fog: false })), slot, cy, 0.07);
+        const artMat = new THREE.MeshBasicMaterial({ color: 0x1a1612, fog: false });
+        A.interior.push(artMat);
+        const art = place(add(A.unitPlane, artMat), slot, cy, 0.07);
         const glow = place(add(A.unitPlane, A.glow(0xffc060, 0.32)), slot, cy, 0.02);
         const lamp = add(A.unitBox, M.dark); lamp.scale.set(0.5, 0.18, 0.45);
         lamp.position.set(...wallPos(slot, slot.y + 4.75, 0.35)); lamp.rotation.y = slot.ry;
@@ -475,6 +481,7 @@ export function buildChurch(scene, world, island, A) {
                 const text = title.length > 34 ? title.slice(0, 33) + '…' : title;
                 const pm = new THREE.MeshBasicMaterial({ fog: false,
                     map: labelTexture(320, 32, text, 'bold 14px "Courier New", Courier, monospace', '#e3d3a0', '#1a130c', '#7a6a44') });
+                A.interior.push(pm);
                 a.plaque = add(A.unitPlane, pm);
                 a.plaque.rotation.y = a.slot.ry;
                 a.layout(iw * s, ih * s);
@@ -482,5 +489,19 @@ export function buildChurch(scene, world, island, A) {
         }
     }
 
-    return { group, artworks, load, capacity: CAPACITY, overflow: Math.max(0, images.length - CAPACITY) };
+    // World-space boxes for culling (outer, with buttresses) and for fog (inside the walls).
+    const aabb = (hw, hl) => {
+        const a = toWorld(-hw, -hl), b = toWorld(hw, hl);
+        return { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
+    };
+    return {
+        group, artworks, load, capacity: CAPACITY, overflow: Math.max(0, images.length - CAPACITY),
+        bounds: aabb(OW + 1.5, OL + 1.5),
+        interior: { ...aabb(IW, IL), maxY: WALL_TOP },
+    };
+}
+
+// Phase 5: make church interiors ignore fog (true = clear interior) or be fogged like the rest.
+export function setInteriorFog(A, fogged) {
+    for (const m of A.interior) if (m.fog !== fogged) { m.fog = fogged; m.needsUpdate = true; }
 }

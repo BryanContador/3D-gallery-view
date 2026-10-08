@@ -47,3 +47,28 @@ export function setStartStatus(text, ready) {
 export function hideStartScreen() {
     document.getElementById('start-screen').classList.add('hidden');
 }
+
+// F3 toggles a small performance readout (bottom left). `read(fps)` returns the text to show.
+export function initDebug(read) {
+    const el = document.createElement('div');
+    el.id = 'debug';
+    el.hidden = true;
+    Object.assign(el.style, {
+        position: 'fixed', left: '14px', bottom: '14px', zIndex: 20, whiteSpace: 'pre',
+        font: '12px "Courier New", Courier, monospace', color: '#b9b4a6', textShadow: '1px 1px 0 #000',
+        pointerEvents: 'none',
+    });
+    document.body.appendChild(el);
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'F3') { e.preventDefault(); el.hidden = !el.hidden; }
+    });
+    let frames = 0, last = performance.now();
+    return function tick() {
+        frames++;
+        const now = performance.now();
+        if (now - last < 500) return;
+        const fps = frames * 1000 / (now - last);
+        frames = 0; last = now;
+        if (!el.hidden) el.textContent = read(fps);
+    };
+}

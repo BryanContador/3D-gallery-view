@@ -208,6 +208,9 @@ function generateHalf(length, rnd) {
 export function buildWorld(scene, data) {
     const world = {
         boxes: [], ramps: [], zones: [], kiosks: [], islands: [], bridges: [],
+        cullables: [],     // { group, bounds } hidden when far away (see atmosphere.js)
+        churchZones: [],   // church interiors, used for per-zone fog
+        churchAssets: null,
         spawn: { x: 0, y: 0, z: 6, yaw: 0 }, currentZone: null,
     };
 
@@ -222,21 +225,26 @@ export function buildWorld(scene, data) {
         kiosk:  new THREE.MeshLambertMaterial({ color: 0xaa1f1f }),
     };
 
-    const addKiosk = (id, x, z) => {
-        addBox(scene, world, x, 0.5, z, 1, 1, 1, mats.kiosk);
+    const addKiosk = (group, id, x, z) => {
+        addBox(group, world, x, 0.5, z, 1, 1, 1, mats.kiosk);
         world.kiosks.push({ id, x, y: 0.5, z });
     };
 
     const churchAssets = makeChurchAssets();
+    world.churchAssets = churchAssets;
 
     // --- nodes: hub + islands ---
     const nodes = {};
     const hub = { id: 'hub', name: 'HUB', cx: 0, cz: 0, half: HUB_HALF };
     nodes.hub = hub;
-    addSurface(scene, world, 0, 0, HUB_HALF * 2, HUB_HALF * 2, 0, mats.hub);
-    addUnderside(scene, 0, 0, HUB_HALF, 22, mats.rock);
-    addKiosk('hub', 0, -4);
-    world.zones.push({ id: 'hub', minX: -HUB_HALF, maxX: HUB_HALF, minZ: -HUB_HALF, maxZ: HUB_HALF,
+    const hubGroup = new THREE.Group();
+    scene.add(hubGroup);
+    hub.group = hubGroup;
+    addSurface(hubGroup, world, 0, 0, HUB_HALF * 2, HUB_HALF * 2, 0, mats.hub);
+    addUnderside(hubGroup, 0, 0, HUB_HALF, 22, mats.rock);
+    addKiosk(hubGroup, 'hub', 0, -4);
+    world.cullables.push({ group: hubGroup, bounds: { minX: -HUB_HALF, maxX: HUB_HALF, minZ: -HUB_HALF, maxZ: HUB_HALF } });
+    world.zones.push({ id: 'hub', kind: 'hub', minX: -HUB_HALF, maxX: HUB_HALF, minZ: -HUB_HALF, maxZ: HUB_HALF,
         spawn: { x: 0, y: 0, z: 6 } });
 
     for (const def of LAYOUT) {
@@ -247,22 +255,28 @@ export function buildWorld(scene, data) {
         const name = (cat.name || def.id).trim().toUpperCase();
         const images = (data[cat.galleryKey] || []).filter(i => i.type === 'image');
 
-        addSurface(scene, world, cx, cz, ISLAND_HALF * 2, ISLAND_HALF * 2, 0, mats.island);
-        addUnderside(scene, cx, cz, ISLAND_HALF, 45, mats.rock);
+        const nodeGroup = new THREE.Group();
+        scene.add(nodeGroup);
+        addSurface(nodeGroup, world, cx, cz, ISLAND_HALF * 2, ISLAND_HALF * 2, 0, mats.island);
+        addUnderside(nodeGroup, cx, cz, ISLAND_HALF, 45, mats.rock);
 
         // Audio kiosk just outside the entrance (Phase 6 makes it interactive).
         const kx = cx + fx * 41 + (-fz) * 6, kz = cz + fz * 41 + fx * 6;
-        addKiosk(def.id, kx, kz);
+        addKiosk(nodeGroup, def.id, kx, kz);
 
         const island = { id: def.id, name, galleryKey: cat.galleryKey, images, cx, cz, half: ISLAND_HALF,
             facing: def.facing,
             // Church centre: 5 m towards the entrance side, so the door is 33 m from the island centre.
             site: { cx: cx + fx * 5, cz: cz + fz * 5 } };
-        const church = buildChurch(scene, world, island, churchAssets);
+        const church = buildChurch(nodeGroup, world, island, churchAssets);   // church group lives inside the island group
         Object.assign(island, church);
         world.islands.push(island);
-        nodes[def.id] = { id: def.id, name, cx, cz, half: ISLAND_HALF };
-        world.zones.push({ id: def.id, minX: cx - ISLAND_HALF, maxX: cx + ISLAND_HALF,
+        nodes[def.id] = { id: def.id, name, cx, cz, half: ISLAND_HALF, group: nodeGroup };
+        const islandBounds = { minX: cx - ISLAND_HALF, maxX: cx + ISLAND_HALF, minZ: cz - ISLAND_HALF, maxZ: cz + ISLAND_HALF };
+        world.cullables.push({ group: nodeGroup, bounds: islandBounds });
+        world.cullables.push({ group: church.group, bounds: church.bounds });
+        world.churchZones.push({ id: def.id, ...church.interior });
+        world.zones.push({ id: def.id, kind: 'island', minX: cx - ISLAND_HALF, maxX: cx + ISLAND_HALF,
             minZ: cz - ISLAND_HALF, maxZ: cz + ISLAND_HALF,
             spawn: { x: cx + fx * 45, y: 0, z: cz + fz * 45 } });
     }
@@ -277,25 +291,32 @@ export function buildWorld(scene, data) {
         const ex = b.cx - dx * b.half, ez = b.cz - dz * b.half;            // bridge end
         const L = Math.abs(ex - sx) + Math.abs(ez - sz);
         const at = (t) => ({ x: sx + dx * t, z: sz + dz * t });
+        const bGroup = new THREE.Group();
+        scene.add(bGroup);
         const place = (t0, t1, y, mat) => {
             const len = t1 - t0, mid = at((t0 + t1) / 2);
             const w = dx !== 0 ? len : BRIDGE_W, d = dx !== 0 ? BRIDGE_W : len;
-            addSurface(scene, world, mid.x, mid.z, w, d, y, mat);
+            addSurface(bGroup, world, mid.x, mid.z, w, d, y, mat);
         };
 
         const half = (L - REST) / 2;
         for (const seg of generateHalf(half, rnd)) place(seg.t0, seg.t1, seg.y, mats.bridge);
         const rest = at(L / 2);
-        addSurface(scene, world, rest.x, rest.z, REST, REST, 0, mats.rest);
-        world.zones.push({ id: `rest_${aId}_${bId}`, minX: rest.x - REST / 2, maxX: rest.x + REST / 2,
+        addSurface(bGroup, world, rest.x, rest.z, REST, REST, 0, mats.rest);
+        world.zones.push({ id: `rest_${aId}_${bId}`, kind: 'rest', minX: rest.x - REST / 2, maxX: rest.x + REST / 2,
             minZ: rest.z - REST / 2, maxZ: rest.z + REST / 2, spawn: { x: rest.x, y: 0, z: rest.z } });
         for (const seg of generateHalf(half, rnd))
             place(L - seg.t1, L - seg.t0, seg.y, mats.bridge);   // mirrored so it ends flush at the far island
 
         // Signposts at each mouth, naming where the bridge leads.
         const sideX = dz !== 0 ? 5 : 0, sideZ = dx !== 0 ? 5 : 0;
-        addSign(scene, sx - dx * 3 + sideX, sz - dz * 3 + sideZ, -dx, -dz, `TO ${b.name}`, mats);
-        addSign(scene, ex + dx * 3 - sideX, ez + dz * 3 - sideZ, dx, dz, `TO ${a.name}`, mats);
+        addSign(a.group, sx - dx * 3 + sideX, sz - dz * 3 + sideZ, -dx, -dz, `TO ${b.name}`, mats);   // signs belong to the island they stand on
+        addSign(b.group, ex + dx * 3 - sideX, ez + dz * 3 - sideZ, dx, dz, `TO ${a.name}`, mats);
+
+        const pad = dx !== 0 ? { x: 0, z: REST / 2 } : { x: REST / 2, z: 0 };
+        world.cullables.push({ group: bGroup, bounds: {
+            minX: Math.min(sx, ex) - pad.x, maxX: Math.max(sx, ex) + pad.x,
+            minZ: Math.min(sz, ez) - pad.z, maxZ: Math.max(sz, ez) + pad.z } });
 
         world.bridges.push({ from: aId, to: bId, start: { x: sx, z: sz }, end: { x: ex, z: ez }, length: L });
     }
@@ -316,16 +337,5 @@ export function updateZones(world, player) {
             player.spawn = { ...zone.spawn, yaw: player.yaw };
         }
         return;
-    }
-}
-
-// Churches: hide the ones far away, and start downloading a church's artwork when you get close.
-const CHURCH_SHOW = 150, CHURCH_LOAD = 190;
-export function updateChurches(world, player) {
-    for (const isl of world.islands) {
-        const dx = player.pos.x - isl.site.cx, dz = player.pos.z - isl.site.cz;
-        const d2 = dx * dx + dz * dz;
-        isl.group.visible = d2 < CHURCH_SHOW * CHURCH_SHOW;
-        if (!isl.loadStarted && d2 < CHURCH_LOAD * CHURCH_LOAD) { isl.loadStarted = true; isl.load(); }
     }
 }
