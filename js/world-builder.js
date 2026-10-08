@@ -226,8 +226,9 @@ export function buildWorld(scene, data) {
     };
 
     const addKiosk = (group, id, x, z) => {
-        addBox(group, world, x, 0.5, z, 1, 1, 1, mats.kiosk);
-        world.kiosks.push({ id, x, y: 0.5, z });
+        const mesh = addBox(group, world, x, 0.5, z, 1, 1, 1, mats.kiosk);
+        mesh.userData = { kind: 'kiosk', id };
+        world.kiosks.push({ id, x, y: 0.5, z, mesh });
     };
 
     const churchAssets = makeChurchAssets();
@@ -320,6 +321,13 @@ export function buildWorld(scene, data) {
 
         world.bridges.push({ from: aId, to: bId, start: { x: sx, z: sz }, end: { x: ex, z: ez }, length: L });
     }
+
+    // Teleport targets: key 0 = hub, keys 1..n = islands in the order they are listed in LAYOUT.
+    // Islands drop you outside the church, facing it.
+    world.teleports = [{ id: 'hub', name: 'HUB', x: 0, y: 0, z: 6, yaw: 0 }].concat(world.islands.map(i => ({
+        id: i.id, name: i.name, x: i.cx + i.facing[0] * 45, y: 0, z: i.cz + i.facing[1] * 45,
+        yaw: Math.atan2(i.facing[0], i.facing[1]),
+    })));
 
     world.currentZone = world.zones[0];
     return world;

@@ -67,3 +67,85 @@ html, body {
 }
 #start-button:hover:not(:disabled) { background: #b9b4a6; color: #07080a; }
 #start-button:disabled { opacity: 0.4; cursor: default; }
+
+/* ---------- Phase 6: interaction UI ---------- */
+#teleport-hint { opacity: 0.7; font-size: 12px; margin-top: 4px; }
+
+#target-label {
+    position: fixed; top: calc(50% + 18px); left: 50%;
+    transform: translateX(-50%);
+    max-width: 60vw;
+    font-size: 13px; text-align: center;
+    text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+    pointer-events: none; z-index: 10;
+}
+#target-label:empty { display: none; }
+
+#toast {
+    position: fixed; top: 18%; left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    background: rgba(8, 7, 6, 0.8); border: 1px solid #8a8270;
+    font-size: 14px; letter-spacing: 1px;
+    opacity: 0; transition: opacity 0.25s;
+    pointer-events: none; z-index: 30;
+}
+#toast.show { opacity: 1; }
+
+/* Music player */
+#audio-player {
+    position: fixed; right: 14px; bottom: 14px; z-index: 25;
+    width: 290px; padding: 8px 10px;
+    background: rgba(10, 9, 8, 0.8); border: 1px solid #6f6b60;
+    font-size: 12px; line-height: 1.4;
+}
+#audio-player[hidden] { display: none; }
+#audio-title { font-weight: bold; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#audio-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+#audio-toggle {
+    font: inherit; color: #b9b4a6; background: transparent;
+    border: 1px solid #b9b4a6; padding: 1px 6px; cursor: pointer;
+}
+#audio-toggle:hover { background: #b9b4a6; color: #07080a; }
+#audio-bar {
+    height: 10px; border: 1px solid #8a8270; background: #1d1b17;
+    cursor: pointer; touch-action: none;
+}
+#audio-fill { height: 100%; width: 0; background: #b9b4a6; pointer-events: none; }
+#audio-hint { margin-top: 6px; opacity: 0.55; font-size: 11px; }
+
+/* Artwork inspector */
+#inspector {
+    position: fixed; inset: 0; z-index: 50;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(5, 6, 8, 0.92);
+}
+#inspector.open { display: flex; }
+#inspector-panel {
+    max-width: 92vw; max-height: 92vh;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 14px; background: #14110d; border: 2px solid #8a8270;
+}
+#inspector-frame { position: relative; display: flex; justify-content: center; min-height: 80px; }
+#inspector-img { max-width: calc(86vw - 50px); max-height: 66vh; object-fit: contain; display: none; }
+#inspector-img.ready { display: block; }
+#inspector-loading { align-self: center; padding: 30px; opacity: 0.7; }
+#inspector-loading.done { display: none; }
+#inspector-title { font-size: 18px; }
+#inspector-desc {
+    max-height: 18vh; overflow-y: auto;
+    white-space: pre-wrap; word-wrap: break-word; font-size: 13px; line-height: 1.5;
+}
+#inspector-desc:empty { display: none; }
+#inspector-desc a { color: #d8c690; }
+#inspector-hint { opacity: 0.5; font-size: 11px; }
+
+/* Alternate versions (altSources): small numbered buttons to the left of the image */
+#inspector-versions { display: flex; flex-direction: column; gap: 6px; align-self: flex-start; margin-right: 10px; }
+#inspector-versions[hidden] { display: none; }
+#inspector-versions button {
+    font: inherit; width: 28px; height: 28px; cursor: pointer;
+    color: #b9b4a6; background: transparent; border: 1px solid #8a8270;
+}
+#inspector-versions button:hover { background: #2a2823; }
+#inspector-versions button.active { background: #b9b4a6; color: #07080a; }

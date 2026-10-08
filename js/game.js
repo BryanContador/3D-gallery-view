@@ -4,6 +4,8 @@ import { Player } from './player.js';
 import { buildWorld, updateZones } from './world-builder.js';
 import { FOG, stats, updateFog, updateCulling } from './atmosphere.js';
 import { initHUD, initDebug, setStartStatus, hideStartScreen } from './ui.js';
+import { initMusic } from './audio.js';
+import { initInteraction } from './interaction.js';
 
 // --- PS1 rendering settings ---
 const DOWNSCALE = 0.35;
@@ -47,11 +49,13 @@ canvas.addEventListener('click', () => { if (!player.isLocked) player.lock(); })
 
 // --- Build the world from the CDN data (galleryData comes from the script tag in index.html) ---
 let world = null;
+let interaction = null;
 if (typeof galleryData === 'undefined') {
     setStartStatus('Could not load data.js from bryancontador.github.io. Check your connection and reload.', false);
 } else {
     world = buildWorld(scene, galleryData);
     player.setWorld(world);
+    interaction = initInteraction({ camera, player, world, music: initMusic() });
     world.islands.forEach(i => console.log(`Island "${i.name}": ${i.images.length} images (church holds ${i.capacity})`));
     setStartStatus(`Data loaded: ${world.islands.length} galleries ready.`, true);
 }
@@ -74,6 +78,7 @@ function animate() {
         updateCulling(world, player, scene.fog.density);
     }
     renderer.render(scene, camera);
+    if (interaction) interaction.update();
     tickDebug();
 }
 animate();

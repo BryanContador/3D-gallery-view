@@ -96,6 +96,16 @@ export class Player {
         this.grounded = false;
     }
 
+    // Jump straight to a spot (teleport keys). Also becomes the respawn point.
+    teleport(t) {
+        this.pos.x = t.x; this.pos.y = t.y + 0.05; this.pos.z = t.z;
+        this.vel.x = this.vel.y = this.vel.z = 0;
+        this.yaw = t.yaw || 0;
+        this.pitch = 0;
+        this.grounded = false;
+        this.spawn = { x: t.x, y: t.y, z: t.z, yaw: this.yaw };
+    }
+
     // ---------- collision helpers ----------
 
     _overlapsXZ(c) {

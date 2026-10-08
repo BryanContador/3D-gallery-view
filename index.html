@@ -19,6 +19,8 @@
 
     <!-- Crosshair -->
     <div id="crosshair"></div>
+    <div id="target-label"></div>
+    <div id="toast"></div>
 
     <!-- HUD Overlay -->
     <div id="hud">
@@ -40,7 +42,33 @@
                 <span id="local-weather">--°C</span>
             </div>
         </div>
-        <div id="controls-hint">WASD to Move | SHIFT to Sprint | SPACE to Jump | CLICK to Interact | ESC to unlock mouse</div>
+        <div id="controls-hint">WASD to Move | SHIFT to Sprint | SPACE to Jump | CLICK to Interact | P to Pause Music | ESC to unlock mouse</div>
+        <div id="teleport-hint"></div>
+    </div>
+
+    <!-- Music player (lower right). Appears after clicking a kiosk. -->
+    <div id="audio-player" hidden>
+        <div id="audio-title"></div>
+        <div id="audio-row">
+            <button id="audio-toggle" type="button">[ PAUSE ]</button>
+            <span id="audio-time">0:00 / 0:00</span>
+        </div>
+        <div id="audio-bar"><div id="audio-fill"></div></div>
+        <div id="audio-hint">P pause | LEFT/RIGHT seek 10s | ESC, then click the bar</div>
+    </div>
+
+    <!-- Artwork inspector: click outside the panel to close -->
+    <div id="inspector">
+        <div id="inspector-panel">
+            <div id="inspector-frame">
+                <div id="inspector-versions" hidden></div>
+                <img id="inspector-img" alt="">
+                <div id="inspector-loading">LOADING...</div>
+            </div>
+            <h2 id="inspector-title"></h2>
+            <div id="inspector-desc"></div>
+            <div id="inspector-hint">CLICK OUTSIDE TO CLOSE</div>
+        </div>
     </div>
 
     <!-- Start screen (Pointer Lock needs a user gesture) -->
